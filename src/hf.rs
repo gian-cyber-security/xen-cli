@@ -1,0 +1,4 @@
+use anyhow::{Context,Result};use reqwest::blocking::Client;use serde_json::Value;
+fn key(c:&crate::config::Config)->Result<&str>{c.hf_api_key.as_deref().context("Hugging Face API is not configured. Use /add-hf-api first.")}
+pub fn search(c:&crate::config::Config,q:&str)->Result<()>{let u=format!("https://huggingface.co/api/models?search={}",urlencoding::encode(q));let v:Vec<Value>=Client::new().get(u).bearer_auth(key(c)?).send()?.error_for_status()?.json()?;for x in v.iter().take(10){println!("{}",x.get("id").and_then(Value::as_str).unwrap_or("unknown"));}Ok(())}
+pub fn info(c:&crate::config::Config,m:&str)->Result<()>{let u=format!("https://huggingface.co/api/models/{m}");let v:Value=Client::new().get(u).bearer_auth(key(c)?).send()?.error_for_status()?.json()?;println!("{}",serde_json::to_string_pretty(&v)?);Ok(())}
