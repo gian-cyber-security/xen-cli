@@ -10,6 +10,7 @@ mod runtime;
 mod project;
 mod ide;
 mod diagnostics;
+mod inference;
 
 fn main() {
     if let Err(err) = app::run() {
