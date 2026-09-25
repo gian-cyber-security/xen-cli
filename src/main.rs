@@ -6,6 +6,10 @@ mod mcp;
 mod models;
 mod permissions;
 mod tools;
+mod runtime;
+mod project;
+mod ide;
+mod diagnostics;
 
 fn main() {
     if let Err(err) = app::run() {
