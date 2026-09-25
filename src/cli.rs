@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::io::{self, Write};
 
-use crate::{config, hf, mcp, models, permissions, tools};
+use crate::{config, diagnostics, hf, ide, mcp, models, permissions, project, runtime, tools};
 
 pub fn repl(cfg: &mut config::Config) -> Result<()> {
     loop {
@@ -89,8 +89,10 @@ fn dispatch(cfg: &mut config::Config, line: &str) -> Result<()> {
         "/settings-xen" => settings(cfg, p.collect()),
         "/mcp" => mcp::command(cfg, p.collect()),
         "/tools" => println!("Tool engine: {} (permissions control access)", if permissions::allowed(cfg, "tools") {"ON"} else {"OFF"}),
-        "/project" => println!("Project workspace command foundation is ready. Use /project <path> to inspect a workspace."),
-        "/ide" => println!("IDE detection is planned in the next implementation pass."),
+        "/project" => { let path = p.next().unwrap_or("."); if permissions::allowed(cfg, "projects") { project::inspect(path)?; } },
+        "/ide" => ide::detect(),
+        "/diagnostics" => diagnostics::run(cfg),
+        "/shell" => { let command = p.collect::<Vec<_>>().join(" "); if command.is_empty() { println!("Usage: /shell <command>"); } else if permissions::allowed(cfg, "shell") { println!("{}", runtime::run_shell(&command)?); } },
         "/config" => println!("{}", serde_json::to_string_pretty(cfg)?),
         _ => println!("Unknown command: {cmd}. Type /help."),
     }
@@ -104,12 +106,12 @@ fn help() {
     println!("Hugging Face: /add-hf-api /hf search|info|install|remove");
     println!("MCP: /mcp add|list|info|enable|disable|remove|reload");
     println!("Settings: /settings-xen [permission] [on|ask|off] /settings-xen reset");
-    println!("Session: /config /tools /ide /exit");
+    println!("Session: /config /tools /ide /diagnostics /shell /exit");
 }
 
 fn status(cfg: &config::Config) {
     println!("XEN CLI 0.2.0");
-    println!("Active model: {}", cfg.active_model.as_deref().unwrap_or("none"));
+    println!("Active model: {}", cfg.active_model.as_deref().unwrap_or("none"));\n    println!("Platform: {} / {}", std::env::consts::OS, std::env::consts::ARCH);
     println!("Registered models: {}", cfg.models.len());
     println!("HF API: {}", if cfg.hf_api_key.is_some() {"configured"} else {"not configured"});
 }
