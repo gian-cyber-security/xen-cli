@@ -12,7 +12,7 @@ pub struct Config {
     pub hf_api_key: Option<String>,
     pub permissions: Permissions,
     pub models: Vec<ModelEntry>,
-    pub active_model: Option<String>,
+    pub active_model: Option<String>,\n    #[serde(default)]\n    pub mcp_servers: Vec<McpServer>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Permissions {
@@ -28,7 +28,7 @@ impl Default for Permissions {
     }}
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ModelEntry { pub name:String, pub path:String, pub source:String, pub format:String }
+pub struct ModelEntry { pub name:String, pub path:String, pub source:String, pub format:String }\n\n#[derive(Debug, Serialize, Deserialize, Clone)]\npub struct McpServer { pub name:String, pub transport:String, pub enabled:bool, pub config:serde_json::Value }
 
 pub fn path() -> Result<PathBuf> {
     Ok(dirs::config_dir().context("Could not find platform config directory")?.join("xen-cli").join("config.json"))
