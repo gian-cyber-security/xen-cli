@@ -138,7 +138,11 @@ fn scan_models(cfg: &mut config::Config) {
 
 fn settings(cfg: &mut config::Config, args: Vec<&str>) {
     if args.is_empty() {
-        println!("Use: /settings-xen <tools|files|commands|network|projects|models|mcp|shell> <on|ask|off>");
+        println!("XEN CLI SETTINGS");
+        println!("tools: {:?} | files: {:?} | commands: {:?}", cfg.permissions.tools, cfg.permissions.files, cfg.permissions.commands);
+        println!("network: {:?} | projects: {:?} | models: {:?}", cfg.permissions.network, cfg.permissions.projects, cfg.permissions.models);
+        println!("mcp: {:?} | shell: {:?}", cfg.permissions.mcp, cfg.permissions.shell);
+        println!("Use: /settings-xen <permission> <on|ask|off>");
         println!("Or: /settings-xen reset");
         return;
     }
