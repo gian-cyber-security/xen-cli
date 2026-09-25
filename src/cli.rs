@@ -1,125 +1,154 @@
+use anyhow::Result;
 use std::io::{self, Write};
 
-pub fn run() {
-    println!("XEN CLI v0.1.0");
-    println!("Type /help for available commands.");
-    println!();
+use crate::{config, hf, mcp, models, permissions, tools};
 
+pub fn repl(cfg: &mut config::Config) -> Result<()> {
     loop {
-        print!("You > ");
-        if io::stdout().flush().is_err() {
-            break;
-        }
+        print!("xen> ");
+        io::stdout().flush()?;
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line)? == 0 { break; }
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        if line == "/exit" || line == "/quit" { break; }
 
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input).is_err() {
-            break;
+        if let Err(e) = dispatch(cfg, line) {
+            println!("Error: {e}");
         }
-
-        let input = input.trim();
-        if input.is_empty() {
-            continue;
-        }
-
-        if input == "/exit" || input == "/quit" {
-            println!("Goodbye.");
-            break;
-        }
-
-        handle_command(input);
     }
+    config::save(cfg)?;
+    Ok(())
 }
 
-fn handle_command(input: &str) {
-    let mut parts = input.split_whitespace();
-    let command = parts.next().unwrap_or("");
-
-    match command {
-        "/xen-cli" => show_center(),
+fn dispatch(cfg: &mut config::Config, line: &str) -> Result<()> {
+    let mut p = line.split_whitespace();
+    let cmd = p.next().unwrap_or("");
+    match cmd {
         "/help" => help(),
-        "/version" => println!("XEN CLI v0.1.0"),
-        "/status" => println!("Status: READY"),
-        "/models" => println!("No models registered yet. Use /scan or /insert <path>."),
-        "/model" | "/use" => {
-            match parts.next() {
-                Some(model) => println!("Selected model: {model}"),
-                None => usage("/use <model>", "/use DeepSeek-V4.1-Flash"),
+        "/xen-cli" | "/status" => status(cfg),
+        "/version" => println!("XEN CLI 0.2.0"),
+        "/models" => list_models(cfg),
+        "/scan" => scan_models(cfg),
+        "/refresh" => scan_models(cfg),
+        "/insert" => {
+            let path = p.next().ok_or_else(|| anyhow::anyhow!("Usage: /insert <local-model-path>"))?;
+            let (name, format) = models::insert(path)?;
+            cfg.models.push(config::ModelEntry {
+                name: name.clone(), path: path.into(), source: "local".into(), format
+            });
+            config::save(cfg)?;
+            println!("Registered local model: {name}");
+        }
+        "/use" => {
+            let name = p.next().ok_or_else(|| anyhow::anyhow!("Usage: /use <model>"))?;
+            if cfg.models.iter().any(|m| m.name == name) {
+                cfg.active_model = Some(name.into());
+                config::save(cfg)?;
+                println!("Active model: {name}");
+            } else {
+                println!("Model not registered. Use /scan or /insert <path>.");
             }
         }
-        "/load" | "/insert" => {
-            match parts.next() {
-                Some(path) => println!("Local model path registered: {path}"),
-                None => usage("/insert <local-model-path>", "/insert ./models/my-model"),
+        "/load" => {
+            let path = p.next().ok_or_else(|| anyhow::anyhow!("Usage: /load <path>"))?;
+            let (name, format) = models::insert(path)?;
+            cfg.models.retain(|m| m.name != name);
+            cfg.models.push(config::ModelEntry {
+                name: name.clone(), path: path.into(), source: "session".into(), format
+            });
+            cfg.active_model = Some(name.clone());
+            config::save(cfg)?;
+            println!("Loaded for this configuration: {name}");
+        }
+        "/unload" => { cfg.active_model = None; config::save(cfg)?; println!("No active model."); }
+        "/add-hf-api" => {
+            let key = p.next().ok_or_else(|| anyhow::anyhow!("Usage: /add-hf-api <token>"))?;
+            cfg.hf_api_key = Some(key.into());
+            config::save(cfg)?;
+            println!("Hugging Face API configured.");
+        }
+        "/hf" => {
+            let sub = p.next().unwrap_or("help");
+            match sub {
+                "search" => hf::search(cfg, &p.collect::<Vec<_>>().join(" "))?,
+                "info" => hf::info(cfg, p.next().ok_or_else(|| anyhow::anyhow!("Usage: /hf info <model>"))?)?,
+                "install" => hf::install(cfg, p.next().ok_or_else(|| anyhow::anyhow!("Usage: /hf install <model>"))?)?,
+                "remove" => hf::remove(cfg, p.next().ok_or_else(|| anyhow::anyhow!("Usage: /hf remove <model>"))?)?,
+                _ => println!("/hf search <query> | /hf info <model> | /hf install <model> | /hf remove <model>"),
             }
         }
-        "/add-hf-api" => println!("Hugging Face API setup is ready for implementation."),
-        "/settings-xen" => settings(parts.collect()),
-        "/mcp" => mcp(parts.collect()),
-        "/scan" => println!("Scanning for supported local AI models..."),
-        "/refresh" => println!("Model and tool registry refreshed."),
-        "/unload" => println!("No model currently loaded."),
-        "/ide" => println!("Checking supported IDEs..."),
-        "/diagnostics" => println!("Diagnostics: basic CLI runtime OK."),
-        "/tools" => println!("Tool access is configurable with /settings-xen."),
-        "/config" | "/settings" => println!("Use /settings-xen for XEN CLI permissions."),
-        "/exit" => {}
-        _ => {
-            println!("Unknown command: {command}");
-            println!("Type /help to see available commands.");
+        "/read" => {
+            let path = p.next().ok_or_else(|| anyhow::anyhow!("Usage: /read <file>"))?;
+            if permissions::allowed(cfg, "files") { println!("{}", tools::read_file(path)?); }
         }
+        "/files" => {
+            let path = p.next().unwrap_or(".");
+            if permissions::allowed(cfg, "files") { tools::list_files(path)?; }
+        }
+        "/settings-xen" => settings(cfg, p.collect()),
+        "/mcp" => mcp::command(cfg, p.collect()),
+        "/tools" => println!("Tool engine: {} (permissions control access)", if permissions::allowed(cfg, "tools") {"ON"} else {"OFF"}),
+        "/project" => println!("Project workspace command foundation is ready. Use /project <path> to inspect a workspace."),
+        "/ide" => println!("IDE detection is planned in the next implementation pass."),
+        "/config" => println!("{}", serde_json::to_string_pretty(cfg)?),
+        _ => println!("Unknown command: {cmd}. Type /help."),
     }
-}
-
-fn show_center() {
-    println!("XEN CLI v0.1.0");
-    println!("Command Center");
-    println!("Use /help for commands.");
+    Ok(())
 }
 
 fn help() {
-    println!("Core: /xen-cli /version /status /models /use /load /insert /scan");
-    println!("HF: /add-hf-api /hf");
-    println!("Tools: /tools /project /files /read /voice /vision");
-    println!("Permissions: /settings-xen");
-    println!("MCP: /mcp");
-    println!("System: /diagnostics /ide /exit /uninstall-xen-cli");
+    println!("Core: /xen-cli /help /version /status /models /scan /refresh");
+    println!("Models: /insert <path> /load <path> /use <model> /unload");
+    println!("Files: /files [path] /read <file> /project [path]");
+    println!("Hugging Face: /add-hf-api /hf search|info|install|remove");
+    println!("MCP: /mcp add|list|info|enable|disable|remove|reload");
+    println!("Settings: /settings-xen [permission] [on|ask|off] /settings-xen reset");
+    println!("Session: /config /tools /ide /exit");
 }
 
-fn usage(syntax: &str, example: &str) {
-    println!("Usage: {syntax}");
-    println!("Example: {example}");
+fn status(cfg: &config::Config) {
+    println!("XEN CLI 0.2.0");
+    println!("Active model: {}", cfg.active_model.as_deref().unwrap_or("none"));
+    println!("Registered models: {}", cfg.models.len());
+    println!("HF API: {}", if cfg.hf_api_key.is_some() {"configured"} else {"not configured"});
 }
 
-fn settings(args: Vec<&str>) {
+fn list_models(cfg: &config::Config) {
+    if cfg.models.is_empty() { println!("No models registered."); return; }
+    for m in &cfg.models { println!("{} | {} | {} | {}", m.name, m.source, m.format, m.path); }
+}
+
+fn scan_models(cfg: &mut config::Config) {
+    for (name, path, format) in models::scan() {
+        if !cfg.models.iter().any(|m| m.path == path) {
+            cfg.models.push(config::ModelEntry { name, path, source: "scan".into(), format });
+        }
+    }
+    let _ = config::save(cfg);
+    println!("Scan complete. {} models registered.", cfg.models.len());
+}
+
+fn settings(cfg: &mut config::Config, args: Vec<&str>) {
     if args.is_empty() {
-        println!("XEN CLI SETTINGS");
-        println!("Tool Access       : ON");
-        println!("File Access       : ASK");
-        println!("Command Execution : ASK");
-        println!("Network Access    : OFF");
-        println!("Project Editing   : ASK");
-        println!("Local AI Models   : ON");
-        println!("MCP               : ASK");
-        println!("Shell             : ASK");
+        println!("Use: /settings-xen <tools|files|commands|network|projects|models|mcp|shell> <on|ask|off>");
+        println!("Or: /settings-xen reset");
         return;
     }
     if args[0] == "reset" {
-        println!("XEN CLI settings reset.");
+        cfg.permissions = config::Permissions::default();
+        let _ = config::save(cfg);
+        println!("Permissions reset.");
         return;
     }
-    if args.len() == 2 && ["on", "ask", "off"].contains(&args[1]) {
-        println!("Setting '{}' changed to {}.", args[0], args[1].to_uppercase());
-    } else {
-        println!("Usage: /settings-xen <tools|files|commands|network|projects|models|mcp|shell> <on|ask|off>");
-    }
-}
-
-fn mcp(args: Vec<&str>) {
-    match args.first().copied() {
-        None => println!("MCP commands: /mcp add, /mcp list, /mcp info <name>, /mcp enable <name>, /mcp disable <name>, /mcp remove <name>, /mcp reload"),
-        Some("add") => println!("Paste your MCP server JSON configuration."),
-        Some("list") => println!("No MCP servers registered."),
-        Some("reload") => println!("MCP registry reloaded."),
-        _ => println!("Unknown MCP command. Type /mcp for help."),
-    }
+    if args.len() < 2 { println!("Usage: /settings-xen <permission> <on|ask|off>"); return; }
+    let Some(slot) = config::permission_mut(cfg, args[0]) else { println!("Unknown permission."); return; };
+    *slot = match args[1] {
+        "on" => config::Permission::On,
+        "ask" => config::Permission::Ask,
+        "off" => config::Permission::Off,
+        _ => { println!("Mode must be on, ask, or off."); return; }
+    };
+    let _ = config::save(cfg);
+    println!("Updated {} -> {}", args[0], args[1]);
 }
