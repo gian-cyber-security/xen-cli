@@ -6,7 +6,7 @@ XEN CLI is a cross-platform, local-first AI agent CLI for working with XEN model
 
 - Local XEN and third-party model loading
 - Hugging Face model integration
-- MCP support for local stdio and HTTP servers
+- MCP support for local stdio servers
 - Configurable permissions with ON / ASK / OFF
 - Cross-platform Windows, macOS, and Linux support
 - Coding tools can integrate with supported IDEs
