@@ -1,0 +1,3 @@
+use crate::config::{Config,Permission};use std::io::{self,Write};
+pub fn allowed(c:&Config,n:&str)->bool{let p=match n{"tools"=>c.permissions.tools,"files"=>c.permissions.files,"commands"=>c.permissions.commands,"network"=>c.permissions.network,"projects"=>c.permissions.projects,"models"=>c.permissions.models,"mcp"=>c.permissions.mcp,"shell"=>c.permissions.shell,_=>Permission::Off};match p{Permission::On=>true,Permission::Off=>false,Permission::Ask=>ask(n)}}
+fn ask(n:&str)->bool{print!("XEN requests '{n}' permission. Allow? [y/N] ");let _=io::stdout().flush();let mut s=String::new();io::stdin().read_line(&mut s).is_ok()&&matches!(s.trim().to_ascii_lowercase().as_str(),"y"|"yes")}
