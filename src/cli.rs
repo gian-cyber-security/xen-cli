@@ -89,6 +89,11 @@ fn dispatch(cfg: &mut config::Config, line: &str) -> Result<()> {
         "/settings-xen" => settings(cfg, p.collect()),
         "/mcp" => mcp::command(cfg, p.collect()),
         "/tools" => println!("Tool engine: {} (permissions control access)", if permissions::allowed(cfg, "tools") {"ON"} else {"OFF"}),
+        "/chat" => {
+            let prompt = p.collect::<Vec<_>>().join(" ");
+            if prompt.is_empty() { println!("Usage: /chat <prompt>"); }
+            else if permissions::allowed(cfg, "tools") { crate::inference::chat(cfg, &prompt)?; }
+        },
         "/project" => { let path = p.next().unwrap_or("."); if permissions::allowed(cfg, "projects") { project::inspect(path)?; } },
         "/ide" => ide::detect(),
         "/diagnostics" => diagnostics::run(cfg),
@@ -101,7 +106,7 @@ fn dispatch(cfg: &mut config::Config, line: &str) -> Result<()> {
 
 fn help() {
     println!("Core: /xen-cli /help /version /status /models /scan /refresh");
-    println!("Models: /insert <path> /load <path> /use <model> /unload");
+    println!("Models: /insert <path> /load <path> /use <model> /unload /chat <prompt>");
     println!("Files: /files [path] /read <file> /project [path]");
     println!("Hugging Face: /add-hf-api /hf search|info|install|remove");
     println!("MCP: /mcp add|list|info|enable|disable|remove|reload");
