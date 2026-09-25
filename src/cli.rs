@@ -116,7 +116,8 @@ fn help() {
 
 fn status(cfg: &config::Config) {
     println!("XEN CLI 0.2.0");
-    println!("Active model: {}", cfg.active_model.as_deref().unwrap_or("none"));\n    println!("Platform: {} / {}", std::env::consts::OS, std::env::consts::ARCH);
+    println!("Active model: {}", cfg.active_model.as_deref().unwrap_or("none"));
+    println!("Platform: {} / {}", std::env::consts::OS, std::env::consts::ARCH);
     println!("Registered models: {}", cfg.models.len());
     println!("HF API: {}", if cfg.hf_api_key.is_some() {"configured"} else {"not configured"});
 }
